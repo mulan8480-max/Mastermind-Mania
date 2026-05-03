@@ -1,94 +1,128 @@
-import getpass
-import os
+import streamlit as st
 
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
+# --- 1. INITIALIZATION (The App Memory) ---
+if "phase" not in st.session_state:
+    st.session_state.phase = "setup"  # setup, p1_set, p2_guess, p2_set, p1_guess, results
+    st.session_state.p1_name = "Player 1"
+    st.session_state.p2_name = "Player 2"
+    st.session_state.secret_code = ""
+    st.session_state.p1_tries = 0
+    st.session_state.p2_tries = 0
+    st.session_state.current_attempts = 0
+    st.session_state.history = []
 
-def show_instructions():
-    print("--- MASTERMIND-MANIA RULES ---")
-    print("1. The Code-Setter picks 5 UNIQUE digits (0-9).")
-    print("2. No digit can be repeated (e.g., 12345 is valid, 11223 is NOT).")
-    print("3. Feedback provided:")
-    print("   - BULLS: Correct digit, correct spot.")
-    print("   - COWS: Correct digit, but wrong spot.")
-    input("\nPress Enter to begin...")
-    clear_screen()
+def is_valid(code):
+    return len(code) == 5 and code.isdigit() and len(set(code)) == 5
 
-def is_valid_5_digit_unique(entry):
-    """Checks if the input is exactly 5 unique digits."""
-    return len(entry) == 5 and entry.isdigit() and len(set(entry)) == 5
+def calculate_feedback(guess, secret):
+    bulls = sum(1 for i in range(5) if guess[i] == secret[i])
+    cows = len(set(guess) & set(secret)) - bulls
+    return bulls, cows
 
-def get_valid_input(prompt, is_secret=False):
-    """Ensures the player enters a valid 5-digit unique code."""
-    while True:
-        if is_secret:
-            entry = getpass.getpass(prompt)
+# --- 2. HEADER & INSTRUCTIONS ---
+st.title("🧩 Mastermind-Mania: 5-Digit Pro")
+with st.expander("Show How to Play"):
+    st.write("""
+    - **Bulls**: Correct digit in the correct spot.
+    - **Cows**: Correct digit in the wrong spot.
+    - **Rules**: Codes must be 5 digits and NO repetitions.
+    """)
+
+# --- 3. GAME PHASES ---
+
+# PHASE: SETUP NAMES
+if st.session_state.phase == "setup":
+    st.header("Who is playing?")
+    st.session_state.p1_name = st.text_input("Player 1 Name", st.session_state.p1_name)
+    st.session_state.p2_name = st.text_input("Player 2 Name", st.session_state.p2_name)
+    if st.button("Start Game"):
+        st.session_state.phase = "p1_set"
+        st.rerun()
+
+# PHASE: P1 SETS CODE
+elif st.session_state.phase == "p1_set":
+    st.header(f"{st.session_state.p1_name}, set your secret code")
+    code = st.text_input("Enter 5 unique digits:", type="password", help="Hide this from your opponent!")
+    if st.button("Lock Secret Code"):
+        if is_valid(code):
+            st.session_state.secret_code = code
+            st.session_state.phase = "p2_guess"
+            st.session_state.current_attempts = 0
+            st.session_state.history = []
+            st.rerun()
         else:
-            entry = input(prompt)
-            
-        if is_valid_5_digit_unique(entry):
-            return entry
-        print("Invalid! Must be 5 digits with NO repetitions (e.g., 12345).")
+            st.error("Invalid code! Must be 5 unique digits.")
 
-def play_round(setter, guesser):
-    print(f"\n{setter}, enter your secret 5-digit code.")
-    secret = get_valid_input(f"Secret code (hidden): ", is_secret=True)
-    clear_screen()
+# PHASE: P2 GUESSES
+elif st.session_state.phase == "p2_guess":
+    st.header(f"{st.session_state.p2_name}'s Turn to Guess")
+    guess = st.text_input(f"Enter Guess #{st.session_state.current_attempts + 1}", max_chars=5)
     
-    print(f"--- {guesser}'s Turn to Guess! ---")
-    attempts = 0
-    
-    while True:
-        attempts += 1
-        guess = get_valid_input(f"Attempt {attempts} - {guesser}: ")
-        
-        if guess == secret:
-            print(f"BINGO! {guesser} cracked the code in {attempts} tries!")
-            return attempts
-        
-        # Logic for 5-digit unique bulls and cows
-        bulls = sum(1 for i in range(5) if guess[i] == secret[i])
-        # Since digits are unique, cows is just common digits minus bulls
-        cows = len(set(guess) & set(secret)) - bulls
-        
-        print(f">> {bulls} Bulls, {cows} Cows")
-
-def main():
-    clear_screen()
-    print("Welcome to Mastermind-Mania (5-Digit Edition)")
-    if input("View instructions? (y/n): ").lower() == 'y':
-        show_instructions()
-        
-    p1 = input("Enter Name for Player 1: ") or "Player 1"
-    p2 = input("Enter Name for Player 2: ") or "Player 2"
-    
-    scores = {p1: 0, p2: 0}
-    
-    while True:
-        # Round A
-        print(f"\n--- MATCH START: {p1} vs {p2} ---")
-        p2_score = play_round(p1, p2)
-        
-        # Round B
-        print(f"\n--- {p2} is now the Setter ---")
-        p1_score = play_round(p2, p1)
-        
-        # Winner calculation for the match
-        if p1_score < p2_score:
-            print(f"\nWINNER: {p1}!")
-            scores[p1] += 1
-        elif p2_score < p1_score:
-            print(f"\nWINNER: {p2}!")
-            scores[p2] += 1
+    if st.button("Submit Guess"):
+        if is_valid(guess):
+            st.session_state.current_attempts += 1
+            if guess == st.session_state.secret_code:
+                st.session_state.p2_tries = st.session_state.current_attempts
+                st.session_state.phase = "p2_set"
+                st.balloons()
+                st.success(f"Correct! {st.session_state.p2_name} took {st.session_state.p2_tries} tries.")
+                st.button("Continue to Next Round")
+            else:
+                b, c = calculate_feedback(guess, st.session_state.secret_code)
+                st.session_state.history.append(f"Guess: {guess} | Bulls: {b}, Cows: {c}")
         else:
-            print("\nIt's a DRAW!")
-            
-        print(f"OVERALL MATCHES WON -> {p1}: {scores[p1]} | {p2}: {scores[p2]}")
-        
-        if input("\nPlay another match? (y/n): ").lower() != 'y':
-            break
+            st.error("Invalid guess!")
 
-    print("Thanks for playing!")
+    for h in reversed(st.session_state.history):
+        st.write(h)
 
-if __name__ == "__main__":
-    main()
+# PHASE: P2 SETS CODE
+elif st.session_state.phase == "p2_set":
+    st.header(f"{st.session_state.p2_name}, set your secret code")
+    code = st.text_input("Enter 5 unique digits:", type="password")
+    if st.button("Lock Secret Code"):
+        if is_valid(code):
+            st.session_state.secret_code = code
+            st.session_state.phase = "p1_guess"
+            st.session_state.current_attempts = 0
+            st.session_state.history = []
+            st.rerun()
+        else:
+            st.error("Invalid code!")
+
+# PHASE: P1 GUESSES
+elif st.session_state.phase == "p1_guess":
+    st.header(f"{st.session_state.p1_name}'s Turn to Guess")
+    guess = st.text_input(f"Enter Guess #{st.session_state.current_attempts + 1}", max_chars=5)
+    
+    if st.button("Submit Guess"):
+        if is_valid(guess):
+            st.session_state.current_attempts += 1
+            if guess == st.session_state.secret_code:
+                st.session_state.p1_tries = st.session_state.current_attempts
+                st.session_state.phase = "results"
+                st.balloons()
+                st.rerun()
+            else:
+                b, c = calculate_feedback(guess, st.session_state.secret_code)
+                st.session_state.history.append(f"Guess: {guess} | Bulls: {b}, Cows: {c}")
+    
+    for h in reversed(st.session_state.history):
+        st.write(h)
+
+# PHASE: FINAL RESULTS
+elif st.session_state.phase == "results":
+    st.header("🏆 Final Results")
+    st.write(f"{st.session_state.p1_name}: {st.session_state.p1_tries} attempts")
+    st.write(f"{st.session_state.p2_name}: {st.session_state.p2_tries} attempts")
+    
+    if st.session_state.p1_tries < st.session_state.p2_tries:
+        st.success(f"{st.session_state.p1_name} Wins!")
+    elif st.session_state.p2_tries < st.session_state.p1_tries:
+        st.success(f"{st.session_state.p2_name} Wins!")
+    else:
+        st.info("It's a Tie!")
+    
+    if st.button("Play Again"):
+        st.session_state.phase = "setup"
+        st.rerun()
